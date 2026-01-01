@@ -272,22 +272,35 @@ class GodModeRefinery:
         self.db.execute("CREATE INDEX IF NOT EXISTS idx_claim_id ON claim_metadata(claim_id)")
         self.db.commit()
         
-        # --- MODEL LOADING (B300 Optimized) ---
-        print("⚡ [INIT] Loading Aux Models (BF16 + FA3) on B300...")
+        # --- MODEL LOADING (B300 Blackwell Optimized) ---
+        # B300 has native cuDNN FlashAttention which is faster than Flash Attention 3
+        print("⚡ [INIT] Loading Aux Models (BF16 + cuDNN Attention) on B300...")
+        
         def load_fast(model, cls, **kwargs):
-            return cls.from_pretrained(model, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_3", **kwargs).to("cuda:0").eval()
+            """Load with best attention backend for B300: cuDNN > FA3 > SDPA > eager"""
+            attn_backends = ["cudnn_flash_attention", "flash_attention_3", "sdpa", "eager"]
+            for attn in attn_backends:
+                try:
+                    print(f"   Trying {attn} for {model.split('/')[-1]}...", end="", flush=True)
+                    m = cls.from_pretrained(model, torch_dtype=torch.bfloat16, attn_implementation=attn, **kwargs).to("cuda:0").eval()
+                    print(f" ✅")
+                    return m
+                except Exception as e:
+                    print(f" ❌ ({str(e)[:50]})")
+            raise RuntimeError(f"Failed to load {model} with any attention backend")
 
         def load_robust_splade(model_name, cls, **kwargs):
-            try:
-                print(f"   ⚡ Attempting SPLADE with Flash Attention 2 (BFloat16)...")
-                return cls.from_pretrained(model_name, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2", **kwargs).to("cuda:0").eval()
-            except Exception: pass
-            try:
-                print(f"   ⚡ Attempting SPLADE with SDPA (BFloat16)...")
-                return cls.from_pretrained(model_name, torch_dtype=torch.bfloat16, attn_implementation="sdpa", **kwargs).to("cuda:0").eval()
-            except Exception: pass
-            print(f"   🐢 Falling back to SPLADE Eager Mode (BFloat16)...")
-            return cls.from_pretrained(model_name, torch_dtype=torch.bfloat16, attn_implementation="eager", **kwargs).to("cuda:0").eval()
+            """SPLADE is BERT-based, different attention support"""
+            attn_backends = ["sdpa", "eager"]  # SPLADE doesn't support FA3/cuDNN
+            for attn in attn_backends:
+                try:
+                    print(f"   Trying {attn} for SPLADE...", end="", flush=True)
+                    m = cls.from_pretrained(model_name, torch_dtype=torch.bfloat16, attn_implementation=attn, **kwargs).to("cuda:0").eval()
+                    print(f" ✅")
+                    return m
+                except Exception as e:
+                    print(f" ❌ ({str(e)[:50]})")
+            raise RuntimeError(f"Failed to load SPLADE with any attention backend")
 
         self.model_lite = load_fast("Qwen/Qwen3-Reranker-0.6B", AutoModelForCausalLM, trust_remote_code=True)
         self.model_heavy = load_fast("Qwen/Qwen3-Reranker-8B", AutoModelForCausalLM, trust_remote_code=True)
