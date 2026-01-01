@@ -1,0 +1,119 @@
+# ==============================================================================
+# VERDA B300 (Blackwell Ultra) Dockerfile
+# Base: Ubuntu 24.04 + CUDA 13.0 Open + Docker (as selected from Verda options)
+# ==============================================================================
+
+FROM nvidia/cuda:13.0.0-cudnn-devel-ubuntu24.04
+
+LABEL maintainer="nvyra-x"
+LABEL description="Data Cache Generation Pipeline for B300 GPUs"
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    python3.12 \
+    python3.12-venv \
+    python3.12-dev \
+    python3-pip \
+    git \
+    wget \
+    curl \
+    libzstd-dev \
+    build-essential \
+    ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.12 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
+
+# Upgrade pip and install uv for fast package management
+RUN python3 -m pip install --upgrade pip uv
+
+# ==============================================================================
+# PyTorch 2.9.1 + CUDA 13.0 (cu130)
+# ==============================================================================
+RUN pip install torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 \
+    --index-url https://download.pytorch.org/whl/cu130
+
+# ==============================================================================
+# Flash Attention 3 (CUDA 13.0 wheels for Blackwell sm_120)
+# ==============================================================================
+RUN pip install flash_attn_3 \
+    --find-links https://windreamer.github.io/flash-attention3-wheels/cu130_torch291 \
+    --extra-index-url https://download.pytorch.org/whl/cu130
+
+# ==============================================================================
+# vLLM 0.14+ with Blackwell Ultra (B300) support
+# ==============================================================================
+RUN pip install "vllm>=0.14.0" \
+    --extra-index-url https://download.pytorch.org/whl/cu130
+
+# ==============================================================================
+# ML/AI Dependencies
+# ==============================================================================
+RUN pip install \
+    transformers==4.57.3 \
+    accelerate>=1.2.0 \
+    bitsandbytes>=0.45.0 \
+    numba==0.61.2 \
+    hf_transfer \
+    fastembed
+
+# ==============================================================================
+# Data Processing
+# ==============================================================================
+RUN pip install \
+    polars \
+    pyarrow \
+    zstandard \
+    datasketch \
+    rank-bm25
+
+# ==============================================================================
+# Async & Networking
+# ==============================================================================
+RUN pip install \
+    uvloop \
+    aiohttp \
+    boto3
+
+# ==============================================================================
+# Storage Backends
+# ==============================================================================
+RUN pip install \
+    libsql-experimental \
+    qdrant-client
+
+# ==============================================================================
+# Environment Variables for B300 Blackwell
+# ==============================================================================
+ENV CUDA_VISIBLE_DEVICES=0
+ENV TORCH_CUDA_ARCH_LIST=12.0
+ENV VLLM_ATTENTION_BACKEND=FLASH_ATTN
+ENV VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+ENV HF_HUB_ENABLE_HF_TRANSFER=1
+ENV NCCL_P2P_DISABLE=1
+ENV TOKENIZERS_PARALLELISM=false
+ENV OMP_NUM_THREADS=1
+ENV PYTORCH_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.8
+
+# ==============================================================================
+# Application Setup
+# ==============================================================================
+WORKDIR /app
+
+# Copy application code
+COPY database_build_verda.py /app/
+COPY requirements.txt /app/
+
+# Create data directory for Arrow files
+RUN mkdir -p /data
+
+# ==============================================================================
+# Entrypoint
+# ==============================================================================
+ENTRYPOINT ["python3", "database_build_verda.py"]
+CMD ["--help"]

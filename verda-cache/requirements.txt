@@ -1,0 +1,56 @@
+# ==============================================================================
+# Verda B300 (Blackwell Ultra) Requirements
+# CUDA 13.0 | PyTorch 2.9.1 | Compute sm_120
+# ==============================================================================
+
+# Core ML - CUDA 13.0 wheels
+--index-url https://download.pytorch.org/whl/cu130
+--extra-index-url https://pypi.org/simple
+torch==2.9.1
+torchvision==0.24.1
+torchaudio==2.9.1
+
+# Flash Attention 3 for Blackwell (separate install with find-links)
+# pip install flash_attn_3 --find-links https://windreamer.github.io/flash-attention3-wheels/cu130_torch291
+
+# vLLM with Blackwell support
+vllm>=0.14.0
+
+# Transformers & Accelerate
+transformers==4.57.3
+accelerate>=1.2.0
+bitsandbytes>=0.45.0
+
+# Async & Performance
+uvloop
+numba==0.61.2
+hf_transfer
+numpy
+
+# Data Processing
+polars
+pyarrow
+zstandard
+datasketch
+rank-bm25
+
+# Networking
+aiohttp
+httpx
+boto3
+
+# Storage Backends
+libsql-experimental
+qdrant-client
+
+# Embeddings
+fastembed
+
+# Additional from original Modal image
+sentencepiece
+tiktoken
+triton>=3.0.0
+lark
+xgrammar
+ninja
+cachetools
